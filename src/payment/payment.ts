@@ -4,7 +4,7 @@ export default interface Payment {
     paymentData?: PaymentInstrument & PaymentInstrumentMeta;
 }
 
-export type PaymentInstrument = CreditCardInstrument | NonceInstrument | VaultedInstrument | CryptogramInstrument | HostedInstrument | ThreeDSVaultedInstrument;
+export type PaymentInstrument = CreditCardInstrument | NonceInstrument | VaultedInstrument | CryptogramInstrument | HostedInstrument | ThreeDSVaultedInstrument | FormattedPayload<BraintreePaypalInstrument>;
 
 export interface PaymentInstrumentMeta {
     deviceSessionId?: string;
@@ -68,4 +68,16 @@ export interface ThreeDSecureToken {
 
 export interface HostedInstrument {
     shouldSaveInstrument?: boolean;
+}
+
+export interface BraintreePaypalInstrument {
+    device_info: string | null;
+    paypal_account: {
+        token: string;
+        email: string | null;
+    };
+}
+
+export interface FormattedPayload<T> {
+    formattedPayload: T;
 }
