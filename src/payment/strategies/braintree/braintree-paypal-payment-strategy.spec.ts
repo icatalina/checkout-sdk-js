@@ -1,10 +1,10 @@
 import { createAction, Action } from '@bigcommerce/data-store';
-import { merge, omit } from 'lodash';
+import { merge, omit, set } from 'lodash';
 import { of, Observable } from 'rxjs';
 
 import { createCheckoutStore, CheckoutStore } from '../../../checkout';
 import { getCheckoutStoreState } from '../../../checkout/checkouts.mock';
-import { MissingDataError, StandardError } from '../../../common/error/errors';
+import { InvalidArgumentError, MissingDataError, StandardError } from '../../../common/error/errors';
 import { OrderActionCreator, OrderActionType, OrderRequestBody } from '../../../order';
 import { OrderFinalizationNotRequiredError } from '../../../order/errors';
 import { getOrderRequestBody } from '../../../order/internal-orders.mock';
@@ -150,6 +150,7 @@ describe('BraintreePaypalPaymentStrategy', () => {
                 ...orderRequestBody.payment,
                 paymentData: {
                     formattedPayload: {
+                        vault_payment_instrument: null,
                         device_info: 'my_session_id',
                         paypal_account: {
                             token: 'my_tokenized_card',
@@ -166,6 +167,7 @@ describe('BraintreePaypalPaymentStrategy', () => {
                 amount: 190,
                 locale: 'en_US',
                 currency: 'USD',
+                shouldVaultInstrument: false,
                 offerCredit: false,
             });
 
@@ -188,6 +190,7 @@ describe('BraintreePaypalPaymentStrategy', () => {
                 amount: 150,
                 locale: 'en_US',
                 currency: 'USD',
+                shouldVaultInstrument: false,
                 offerCredit: false,
             });
 
@@ -198,6 +201,7 @@ describe('BraintreePaypalPaymentStrategy', () => {
                 amount: 190,
                 locale: 'en_US',
                 currency: 'USD',
+                shouldVaultInstrument: false,
                 offerCredit: false,
             });
         });
@@ -208,6 +212,7 @@ describe('BraintreePaypalPaymentStrategy', () => {
             const expected = expect.objectContaining({
                 paymentData: {
                     formattedPayload: {
+                        vault_payment_instrument: null,
                         device_info: null,
                         paypal_account: {
                             token: 'some-nonce',
@@ -278,6 +283,7 @@ describe('BraintreePaypalPaymentStrategy', () => {
                     ...orderRequestBody.payment,
                     paymentData: {
                         formattedPayload: {
+                            vault_payment_instrument: null,
                             device_info: 'my_session_id',
                             paypal_account: {
                                 token: 'my_tokenized_card',
@@ -294,10 +300,74 @@ describe('BraintreePaypalPaymentStrategy', () => {
                     amount: 190,
                     locale: 'en_US',
                     currency: 'USD',
+                    shouldVaultInstrument: false,
                     offerCredit: true,
                 });
                 expect(paymentActionCreator.submitPayment).toHaveBeenCalledWith(expected);
                 expect(store.dispatch).toHaveBeenCalledWith(submitPaymentAction);
+            });
+        });
+
+        describe('when vaulting is selected', () => {
+            it('initializes paypal in vault mode', async () => {
+                paymentMethodMock = set(paymentMethodMock, 'config.isVaultingEnabled', true);
+
+                const expected = {
+                    ...orderRequestBody.payment,
+                    paymentData: {
+                        formattedPayload: {
+                            vault_payment_instrument: true,
+                            device_info: 'my_session_id',
+                            paypal_account: {
+                                token: 'my_tokenized_card',
+                                email: 'random@email.com',
+                            },
+                        },
+                    },
+                };
+
+                await braintreePaypalPaymentStrategy.initialize(options);
+                await braintreePaypalPaymentStrategy.execute(set(orderRequestBody, 'payment.paymentData.shouldSaveInstrument', true), options);
+
+                expect(braintreePaymentProcessorMock.paypal).toHaveBeenCalledWith(expect.objectContaining({
+                    shouldVaultInstrument: true,
+                }));
+
+                expect(paymentActionCreator.submitPayment).toHaveBeenCalledWith(expected);
+                expect(store.dispatch).toHaveBeenCalledWith(submitPaymentAction);
+            });
+
+            it('sends vault_payment_instrument set to true', async () => {
+                paymentMethodMock = set(paymentMethodMock, 'config.isVaultingEnabled', true);
+
+                const expected = {
+                    ...orderRequestBody.payment,
+                    paymentData: {
+                        formattedPayload: expect.objectContaining({
+                            vault_payment_instrument: true,
+                        }),
+                    },
+                };
+
+                await braintreePaypalPaymentStrategy.initialize(options);
+                await braintreePaypalPaymentStrategy.execute(set(orderRequestBody, 'payment.paymentData.shouldSaveInstrument', true), options);
+
+                expect(braintreePaymentProcessorMock.paypal).toHaveBeenCalledWith(expect.objectContaining({
+                    shouldVaultInstrument: true,
+                }));
+
+                expect(paymentActionCreator.submitPayment).toHaveBeenCalledWith(expected);
+                expect(store.dispatch).toHaveBeenCalledWith(submitPaymentAction);
+            });
+
+            it('throws if vaulting is enabled and trying to save an instrument', async () => {
+                await braintreePaypalPaymentStrategy.initialize(options);
+
+                try {
+                    await braintreePaypalPaymentStrategy.execute(set(orderRequestBody, 'payment.paymentData.shouldSaveInstrument', true), options);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(InvalidArgumentError);
+                }
             });
         });
     });

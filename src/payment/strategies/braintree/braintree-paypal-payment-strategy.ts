@@ -1,5 +1,5 @@
 import { CheckoutStore, InternalCheckoutSelectors } from '../../../checkout';
-import { MissingDataError, MissingDataErrorType, NotInitializedError, NotInitializedErrorType } from '../../../common/error/errors';
+import { InvalidArgumentError, MissingDataError, MissingDataErrorType, NotInitializedError, NotInitializedErrorType } from '../../../common/error/errors';
 import { OrderActionCreator, OrderPaymentRequestBody, OrderRequestBody } from '../../../order';
 import { OrderFinalizationNotRequiredError } from '../../../order/errors';
 import { PaymentArgumentInvalidError, PaymentMethodCancelledError, PaymentMethodFailedError } from '../../errors';
@@ -89,6 +89,9 @@ export default class BraintreePaypalPaymentStrategy implements PaymentStrategy {
         const state = this._store.getState();
         const grandTotal = state.checkout.getGrandTotal(useStoreCredit);
         const config = state.config.getStoreConfig();
+        const shouldVaultInstrument = (payment.paymentData && 'shouldSaveInstrument' in payment.paymentData)
+            ? payment.paymentData.shouldSaveInstrument
+            : false;
 
         if (!grandTotal) {
             throw new MissingDataError(MissingDataErrorType.MissingCheckout);
@@ -109,12 +112,17 @@ export default class BraintreePaypalPaymentStrategy implements PaymentStrategy {
             return Promise.resolve({ ...payment, paymentData: this._formattedPayload(nonce) });
         }
 
+        if (shouldVaultInstrument && !this._paymentMethod.config.isVaultingEnabled) {
+            throw new InvalidArgumentError('Vaulting is disabled but shouldSaveInstrument is set to true');
+        }
+
         return Promise.all([
             this._braintreePaymentProcessor.paypal({
                 amount: grandTotal,
                 locale: storeLanguage,
                 currency: currency.code,
                 offerCredit: this._credit,
+                shouldVaultInstrument,
             }),
             this._braintreePaymentProcessor.getSessionId(),
         ]).then(([
@@ -122,13 +130,14 @@ export default class BraintreePaypalPaymentStrategy implements PaymentStrategy {
             sessionId,
         ]) => ({
             ...payment,
-            paymentData: this._formattedPayload(nonce, details.email, sessionId),
+            paymentData: this._formattedPayload(nonce, details.email, sessionId, shouldVaultInstrument),
         }));
     }
 
-    private _formattedPayload(token: string, email?: string, sessionId?: string): FormattedPayload<BraintreePaypalInstrument> {
+    private _formattedPayload(token: string, email?: string, sessionId?: string, vaultPaymentInstrument?: boolean): FormattedPayload<BraintreePaypalInstrument> {
         return {
             formattedPayload: {
+                vault_payment_instrument: vaultPaymentInstrument || null,
                 device_info: sessionId || null,
                 paypal_account: {
                     token,
