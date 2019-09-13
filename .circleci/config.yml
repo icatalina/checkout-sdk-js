@@ -1,44 +1,98 @@
-version: 2.1
+version: 2rb.
+
+aliases:
+  - &node_executor
+      executor:
+        name: node/node
+        node-version: "10"
 
 orbs:
   ci: bigcommerce/internal@volatile
   node: bigcommerce/internal-node@volatile
+  checkout-sdk-js:
+    commands:
+      install_dependencies:
+        steps:
+          - restore_cache:
+              keys:
+                - checkout-sdk-js
+          - run:
+              name: "Install NPM dependencies"
+              command: npm ci
+          - save_cache:
+              key: checkout-sdk-js
+              paths:
+                - ~/.npm
 
 jobs:
   build:
-    executor:
-      name: node/node
-      node-version: "10"
+    install:
+        <<: *node_executor
+        steps:
+          - restore_cache:
+              keys:
+                - checkout-sdk-js
+          - run:
+              name: "Install NPM dependencies"
+              command: npm ci
+          - save_cache:
+              key: checkout-sdk-js
+              paths:
+                - ~/.npm
+          - persist_to_workspace:
+              root: .
+              path: node_modules
 
-    steps:
-      - ci/pre-setup
+    build:
+        <<: *node_executor
+        steps:
+          - ci/pre-setup
+          - attach_workspace:
+              at: node_modules
+          - run:
+              npm run bundle
+    test:
+        <<: *node_executor
+        requires: install
+        steps:
+          - ci/pre-setup
+          - attach_workspace:
+              at: node_modules
+          - run:
+            name: Test
+            command: npm run test:series -- --coverage
+            when: always
 
-      - restore_cache:
-          keys:
-            - checkout-sdk-js
+          - store_artifacts:
+            path: coverage
+            destination: coverage
 
-      - run: npm ci
-
-      - save_cache:
-          key: checkout-sdk-js
-          paths:
-            - ~/.npm
-
-      - run:
-          name: Test
-          command: npm run test:series -- --coverage
-          when: always
-
-      - store_artifacts:
-          path: coverage
-          destination: coverage
-
-      - run:
+    lint:
+      <<: *node_executor
+      requires: install
+      steps:
+        - ci/pre-setup
+        - attach_workspace:
+            at: node_modules
+        - run:
           name: Lint
           command: npm run lint
           when: always
 
-      - run:
-          name: Validate commits
-          command: npm run validate-commits
-          when: always
+    validate-commits:
+        steps:
+          - ci/pre-setup
+          - ci/merge-base
+          - run:
+              name: 'Validate Commits'
+              command: '[ -z "$MERGE_BASE_SHA1" ] || npx @bigcommerce/validate-commits ${MERGE_BASE_SHA1}..${CIRCLE_SHA1}'
+
+workflows:
+    version: 2
+    main:
+        jobs:
+            - build
+            - test
+            - lint
+            - validate-commits
+
