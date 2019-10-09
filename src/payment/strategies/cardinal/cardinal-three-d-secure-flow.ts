@@ -7,6 +7,7 @@ import {
     MissingDataErrorType,
     RequestError
 } from '../../../common/error/errors';
+import { PaymentInstrumentNotValidError } from '../../errors';
 import isCreditCardLike from '../../is-credit-card-like';
 import isVaultedInstrument from '../../is-vaulted-instrument';
 import Payment from '../../payment';
@@ -113,7 +114,11 @@ export default class CardinalThreeDSecureFlow {
 
             const entry = find(instruments, { bigpayToken: instrumentId });
 
-            return entry && entry.iin || '';
+            if (!entry || entry.method !== 'card') {
+                throw new PaymentInstrumentNotValidError();
+            }
+
+            return entry.iin;
         }
 
         return payment.ccNumber;

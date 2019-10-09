@@ -95,7 +95,7 @@ describe('instrumentReducer()', () => {
 
         expect(instrumentReducer(initialState, action)).toEqual({
             ...initialState,
-            data: [initialInstruments[1]],
+            data: initialInstruments.splice(1),
             meta: action.meta,
             errors: { deleteError: undefined },
             statuses: {
