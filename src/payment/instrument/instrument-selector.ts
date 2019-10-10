@@ -1,12 +1,15 @@
 import { memoizeOne } from '@bigcommerce/memoize';
+import { filter } from 'lodash';
 
+import { PaymentMethod } from '..';
 import { createSelector } from '../../common/selector';
 
 import Instrument from './instrument';
 import InstrumentState, { DEFAULT_STATE, InstrumentMeta } from './instrument-state';
+import supportedMethods from './supported-payment-instruments';
 
 export default interface InstrumentSelector {
-    getInstruments(): Instrument[] | undefined;
+    getInstruments(paymentMethod?: PaymentMethod): Instrument[] | undefined;
     getInstrumentsMeta(): InstrumentMeta | undefined;
     getLoadError(): Error | undefined;
     getDeleteError(instrumentId?: string): Error | undefined;
@@ -19,7 +22,23 @@ export type InstrumentSelectorFactory = (state: InstrumentState) => InstrumentSe
 export function createInstrumentSelectorFactory(): InstrumentSelectorFactory {
     const getInstruments = createSelector(
         (state: InstrumentState) => state.data,
-        instruments => () => instruments
+        instruments => (paymentMethod?: PaymentMethod) => {
+            if (!instruments) {
+                return undefined;
+            }
+
+            if (!paymentMethod) {
+                return filter(instruments, { method: 'card' });
+            }
+
+            const currentMethod = supportedMethods[paymentMethod.id];
+
+            if (!currentMethod) {
+                return [];
+            }
+
+            return filter(instruments, currentMethod);
+        }
     );
 
     const getInstrumentsMeta = createSelector(
